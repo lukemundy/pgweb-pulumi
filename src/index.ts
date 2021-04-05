@@ -1,9 +1,9 @@
-import * as pulumi from "@pulumi/pulumi";
-import * as aws from "@pulumi/aws";
-import * as awsx from "@pulumi/awsx";
+import * as pulumi from '@pulumi/pulumi';
+import * as aws from '@pulumi/aws';
 
-// Create an AWS resource (S3 Bucket)
-const bucket = new aws.s3.Bucket("my-bucket");
+const cfg = new pulumi.Config();
 
-// Export the name of the bucket
+const bucket = new aws.s3.Bucket('my-bucket');
+
 export const bucketName = bucket.id;
+export const bucketArn = bucket.arn;
