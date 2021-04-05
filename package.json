@@ -1,0 +1,11 @@
+{
+  "name": "pgweb-pulumi",
+  "version": "1.0.0",
+  "description": "An AWS deployment of pgweb via Pulumi",
+  "author": "Luke Mundy <lmundy@gmail.com>",
+  "license": "ISC",
+  "main": "src/index.ts",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  }
+}
