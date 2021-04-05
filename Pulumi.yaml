@@ -1,0 +1,5 @@
+name: pgweb-pulumi
+runtime: nodejs
+description: An AWS deployment of pgweb via Pulumi
+main: src/
+config: config/
