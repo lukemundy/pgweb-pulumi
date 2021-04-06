@@ -3,37 +3,44 @@ import * as aws from '@pulumi/aws';
 
 export interface SecretFromInput {
     /**
-     * Name of the environment variable that will contain the secret value
+     * Name of the environment variable that will contain the secret value.
      *
      * Eg `MY_PASSWORD`
      */
     name: string;
 
     /**
-     * Full ARN to a secrets manager or parameter store secret resource that contains your secret
+     * Full ARN to a secrets manager or parameter store secret resource that contains your secret.
      */
     valueFromArn: pulumi.Input<string>;
 
     /**
-     * The source of the secret, either `parameter-store` or `secrets-manager`
+     * The source of the secret, either `parameter-store` or `secrets-manager`.
      */
     source: 'parameter-store' | 'secrets-manager';
 
     /**
      * When using secrets manager, you can optionally provide a JSON key to include only a specific JSON property from
-     * that secret
+     * that secret.
      */
     key?: string;
 }
 
 export interface FargateServiceArgs {
     /**
-     * Name of the ECS cluster to create the service in
+     * ID of a Security Group that contains the ALB that will be handling traffic for this service.
+     *
+     * Eg `sg-9879a8e7dacd`
+     */
+    albSecurityGroupId: pulumi.Input<string>;
+
+    /**
+     * Name of the ECS cluster to create the service in.
      */
     clusterName: pulumi.Input<string>;
 
     /**
-     * How long (in days) to retain container logs for
+     * How long (in days) to retain container logs for.
      */
     logRetention?: number;
 
@@ -43,18 +50,37 @@ export interface FargateServiceArgs {
     namespace?: string;
 
     /**
-     * ARN to a Secrets Manager secret containing the relevant repository
-     * credentials for the container(s) being deployed in this service.
+     * Which port your service listens on.
+     *
+     * Eg `8080`
+     */
+    port: number;
+
+    /**
+     * ARN to a Secrets Manager secret containing the relevant repository credentials for the container(s) being
+     * deployed in this service.
      *
      * https://docs.aws.amazon.com/AmazonECS/latest/developerguide/private-auth.html
      */
     repositoryCredentialsArn?: pulumi.Input<string>;
 
     /**
-     * An array of Secrets Manager or Parameter Store ARNs to pass to the task
-     * as environment variables
+     * An array of Secrets Manager or Parameter Store ARNs to pass to the task as environment variables.
      */
     secrets?: SecretFromInput[];
+
+    /**
+     * An IAM policy defining what AWS permissions you would like the container(s) in your service to have. Defaults to
+     * having no permissions
+     */
+    taskPolicy?: aws.iam.PolicyDocument;
+
+    /**
+     * ID of the VPC the service should be provisioned in.
+     *
+     * Eg `vpc-1aa478ffc`
+     */
+    vpcId: pulumi.Input<string>;
 }
 
 export class FargateService extends pulumi.ComponentResource {
@@ -62,10 +88,24 @@ export class FargateService extends pulumi.ComponentResource {
 
     readonly logGroup: aws.cloudwatch.LogGroup;
 
+    readonly securityGroup: aws.ec2.SecurityGroup;
+
+    readonly taskRole: aws.iam.Role;
+
     constructor(name: string, args: FargateServiceArgs, opts?: pulumi.ComponentResourceOptions) {
         super('FargateService', name, args, opts);
 
-        const { clusterName, logRetention, namespace, repositoryCredentialsArn, secrets } = args;
+        const {
+            albSecurityGroupId,
+            clusterName,
+            logRetention,
+            namespace,
+            port,
+            repositoryCredentialsArn,
+            secrets,
+            taskPolicy,
+            vpcId,
+        } = args;
         const prefix = namespace ?? `${name}-${pulumi.getStack()}`;
 
         // Everything from the pgweb container's stdout will be stored in this log group
@@ -197,7 +237,62 @@ export class FargateService extends pulumi.ComponentResource {
             );
         }
 
+        // The role the actual task itself will assume
+        const taskRole = new aws.iam.Role(
+            `${prefix}-task-role`,
+            {
+                assumeRolePolicy: {
+                    Version: '2012-10-17',
+                    Statement: [
+                        {
+                            Effect: 'Allow',
+                            Principal: {
+                                Service: 'ecs-tasks.amazonaws.com',
+                            },
+                            Action: 'sts:AssumeRole',
+                        },
+                    ],
+                },
+            },
+            { parent: this },
+        );
+
+        if (taskPolicy) {
+            const taskRolePolicy = new aws.iam.RolePolicy(
+                `${prefix}-role-policy`,
+                {
+                    role: taskRole,
+                    policy: taskPolicy,
+                },
+                { parent: taskRole },
+            );
+        }
+
+        const securityGroup = new aws.ec2.SecurityGroup(
+            `${prefix}-sg`,
+            {
+                vpcId,
+                description: `Controls access to the ${prefix} service`,
+            },
+            { parent: this },
+        );
+
+        const ingressFromAlb = new aws.ec2.SecurityGroupRule(
+            'ingress-from-alb-rule',
+            {
+                type: 'ingress',
+                securityGroupId: securityGroup.id,
+                protocol: 'TCP',
+                fromPort: port,
+                toPort: port,
+                sourceSecurityGroupId: albSecurityGroupId,
+            },
+            { parent: securityGroup },
+        );
+
         this.executionRole = executionRole;
         this.logGroup = logGroup;
+        this.securityGroup = securityGroup;
+        this.taskRole = taskRole;
     }
 }
