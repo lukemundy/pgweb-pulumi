@@ -1,4 +1,3 @@
----
 extends:
   - airbnb-typescript/base
   - plugin:@typescript-eslint/recommended
@@ -18,4 +17,4 @@ parserOptions:
   sourceType: module
   project: ./tsconfig.json
 rules:
-  "@typescript-eslint/no-unused-vars": false
+  "@typescript-eslint/no-unused-vars": off

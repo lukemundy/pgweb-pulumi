@@ -1,9 +1,12 @@
 import * as pulumi from '@pulumi/pulumi';
-import * as aws from '@pulumi/aws';
+import { FargateService } from './components/fargate-service';
 
 const cfg = new pulumi.Config();
 
-const bucket = new aws.s3.Bucket('my-bucket');
+const service = new FargateService('pgweb-service', {
+    clusterName: 'my-cluster',
+    namespace: 'pgweb',
+});
 
-export const bucketName = bucket.id;
-export const bucketArn = bucket.arn;
+export const executionRoleArn = service.executionRole.arn;
+export const logGroupName = service.logGroup.name;
