@@ -1,5 +1,6 @@
 import * as pulumi from '@pulumi/pulumi';
 import * as aws from '@pulumi/aws';
+import * as random from '@pulumi/random';
 
 export interface SecretFromInput {
     /**
@@ -32,7 +33,18 @@ export interface FargateServiceArgs {
      *
      * Eg `sg-9879a8e7dacd`
      */
-    albSecurityGroupId: pulumi.Input<string>;
+    albSecurityGroupId?: pulumi.Input<string>;
+
+    /**
+     * Name of the container image to deploy. If the image is on Docker Hub you
+     * can just supply the name and tag eg `nginx:1.19`. If you are using
+     * another registry, you need to provide the hostname as well eg
+     * `chu-docker-local.jfrog.io/my-app:v3.2.1`.
+     *
+     * Note that if your registry requires authentication to access you also
+     * need to provide an appropriate value for `repositoryCredentialsArn`
+     */
+    containerImage: string;
 
     /**
      * Name of the ECS cluster to create the service in.
@@ -40,9 +52,29 @@ export interface FargateServiceArgs {
     clusterName: pulumi.Input<string>;
 
     /**
+     * Amount of CPU units to allocate to each task in your service where 512 is equal to half of a CPU core. A much
+     * more in-depth explanation on how CPU and memory allocation works can be seen here:
+     *
+     * https://aws.amazon.com/blogs/containers/how-amazon-ecs-manages-cpu-and-memory-resources/
+     *
+     * Default: `256`
+     */
+    cpu?: number;
+
+    /**
      * How long (in days) to retain container logs for.
      */
     logRetention?: number;
+
+    /**
+     * Amount of memory (in MB) to allocate to each task in your service. A much more in-depth explanation on how CPU
+     * and memory allocation works can be seen here:
+     *
+     * https://aws.amazon.com/blogs/containers/how-amazon-ecs-manages-cpu-and-memory-resources/
+     *
+     * Default: `512`
+     */
+    memory?: number;
 
     /**
      * Namespace used as a prefix for resource names.
@@ -90,6 +122,8 @@ export class FargateService extends pulumi.ComponentResource {
 
     readonly securityGroup: aws.ec2.SecurityGroup;
 
+    readonly taskDefinition: aws.ecs.TaskDefinition;
+
     readonly taskRole: aws.iam.Role;
 
     constructor(name: string, args: FargateServiceArgs, opts?: pulumi.ComponentResourceOptions) {
@@ -97,8 +131,11 @@ export class FargateService extends pulumi.ComponentResource {
 
         const {
             albSecurityGroupId,
+            containerImage,
             clusterName,
+            cpu,
             logRetention,
+            memory,
             namespace,
             port,
             repositoryCredentialsArn,
@@ -277,22 +314,54 @@ export class FargateService extends pulumi.ComponentResource {
             { parent: this },
         );
 
-        const ingressFromAlb = new aws.ec2.SecurityGroupRule(
-            'ingress-from-alb-rule',
+        if (albSecurityGroupId) {
+            const ingressFromAlb = new aws.ec2.SecurityGroupRule(
+                'ingress-from-alb-rule',
+                {
+                    type: 'ingress',
+                    securityGroupId: securityGroup.id,
+                    protocol: 'TCP',
+                    fromPort: port,
+                    toPort: port,
+                    sourceSecurityGroupId: albSecurityGroupId,
+                },
+                { parent: securityGroup },
+            );
+        }
+
+        const randomId = new random.RandomId(
+            'task-definition-family-id',
             {
-                type: 'ingress',
-                securityGroupId: securityGroup.id,
-                protocol: 'TCP',
-                fromPort: port,
-                toPort: port,
-                sourceSecurityGroupId: albSecurityGroupId,
+                byteLength: 4,
             },
-            { parent: securityGroup },
+            { parent: this },
+        );
+
+        const taskDefinition = new aws.ecs.TaskDefinition(
+            `${prefix}-task-definition`,
+            {
+                family: pulumi.interpolate`${prefix}-${randomId.hex}`,
+                executionRoleArn: executionRole.arn,
+                taskRoleArn: taskRole.arn,
+                networkMode: 'awsvpc',
+                requiresCompatibilities: ['FARGATE'],
+                cpu: `${cpu ?? 256}`,
+                memory: `${memory ?? 512}`,
+                containerDefinitions: JSON.stringify([
+                    {
+                        name: 'container',
+                        image: containerImage,
+                        portMappings: [{ containerPort: port }],
+                    },
+                ]),
+            },
+            { parent: this },
         );
 
         this.executionRole = executionRole;
         this.logGroup = logGroup;
         this.securityGroup = securityGroup;
+        this.taskDefinition = taskDefinition;
         this.taskRole = taskRole;
     }
 }
