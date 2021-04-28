@@ -1,6 +1,6 @@
 import * as pulumi from '@pulumi/pulumi';
 import * as aws from '@pulumi/aws';
-import { FargateService } from './components/fargate-service';
+import FargateService from './components/fargate-service';
 
 const cfg = new pulumi.Config();
 const prefix = `pgweb-${pulumi.getStack()}`;
@@ -53,12 +53,15 @@ const listener = new aws.lb.Listener(
 );
 
 const service = new FargateService('pgweb-service', {
-    albSecurityGroupId: albSecurityGroup.id,
-    albListenerArn: listener.arn,
     clusterName: cluster.name,
-    containerImage: 'sosedoff/pgweb',
+    containers: [
+        {
+            name: 'pgweb',
+            image: 'sosedoff/pgweb',
+            logGroupName: 'asd',
+        },
+    ],
     namespace: prefix,
-    port: 8081,
     subnetIds,
     vpcId,
 });
@@ -76,7 +79,6 @@ const albEgressToServiceRule = new aws.ec2.SecurityGroupRule(
     { parent: albSecurityGroup },
 );
 
-export const logGroupName = service.logGroup.name;
 export const serviceSecurityGroupId = service.securityGroup.id;
 export const taskDefinitionArn = service.taskDefinition.arn;
 export const taskRoleArn = service.taskRole.arn;

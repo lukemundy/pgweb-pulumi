@@ -1,142 +1,11 @@
 import * as pulumi from '@pulumi/pulumi';
 import * as aws from '@pulumi/aws';
 import * as random from '@pulumi/random';
+import { FargateServiceArgs, FargateServiceDefaults, FargateServiceArgsWithDefaults, SecretFromInput } from './types';
+import { validCpuMemoryCombinations } from './constants';
 
-export interface SecretFromInput {
-    /**
-     * Name of the environment variable that will contain the secret value.
-     *
-     * Eg `MY_PASSWORD`
-     */
-    name: string;
-
-    /**
-     * Full ARN to a secrets manager or parameter store secret resource that contains your secret.
-     */
-    valueFromArn: pulumi.Input<string>;
-
-    /**
-     * The source of the secret, either `parameter-store` or `secrets-manager`.
-     */
-    source: 'parameter-store' | 'secrets-manager';
-
-    /**
-     * When using secrets manager, you can optionally provide a JSON key to include only a specific JSON property from
-     * that secret.
-     */
-    key?: string;
-}
-
-export interface FargateServiceArgs {
-    /**
-     * ARN of an ALB listener to use for this service. A rule will be created to route relevant requests to the service
-     *
-     * Eg `arn:aws:elasticloadbalancing:<AWS_REGION>:<ACCOUNT_ID>:listener/app/name-of-alb/24cc901288efd990/eacc674b53cedc2d`
-     */
-    albListenerArn: pulumi.Input<string>;
-
-    /**
-     * ID of a Security Group that contains the ALB that will be handling traffic for this service.
-     *
-     * Eg `sg-9879a8e7dacd`
-     */
-    albSecurityGroupId?: pulumi.Input<string>;
-
-    /**
-     * Name of the ECS cluster to create the service in.
-     */
-    clusterName: pulumi.Input<string>;
-
-    /**
-     * Name of the container image to deploy. If the image is on Docker Hub you can just supply the name and tag eg
-     * `nginx:1.19`. If you are using another registry, you need to provide the hostname as well eg
-     * `chu-docker-local.jfrog.io/my-app:v3.2.1`.
-     *
-     * Note that if your registry requires authentication to access you also need to provide an appropriate value for
-     * `repositoryCredentialsArn`
-     */
-    containerImage: string;
-
-    /**
-     * Amount of CPU units to allocate to each task in your service where 512 is equal to half of a CPU core. A much
-     * more in-depth explanation on how CPU and memory allocation works can be seen here:
-     *
-     * https://aws.amazon.com/blogs/containers/how-amazon-ecs-manages-cpu-and-memory-resources/
-     *
-     * Default: `256`
-     */
-    cpu?: number;
-
-    /**
-     * How long (in days) to retain container logs for.
-     *
-     * Default: 14
-     */
-    logRetention?: number;
-
-    /**
-     * Amount of memory (in MB) to allocate to each task in your service. A much more in-depth explanation on how CPU
-     * and memory allocation works can be seen here:
-     *
-     * https://aws.amazon.com/blogs/containers/how-amazon-ecs-manages-cpu-and-memory-resources/
-     *
-     * Default: `512`
-     */
-    memory?: number;
-
-    /**
-     * Namespace used as a prefix for resource names.
-     */
-    namespace?: string;
-
-    /**
-     * Which port your service listens on.
-     *
-     * Eg `8080`
-     */
-    port: number;
-
-    /**
-     * ARN to a Secrets Manager secret containing the relevant repository credentials for the container(s) being
-     * deployed in this service.
-     *
-     * https://docs.aws.amazon.com/AmazonECS/latest/developerguide/private-auth.html
-     */
-    repositoryCredentialsArn?: pulumi.Input<string>;
-
-    /**
-     * An array of Secrets Manager or Parameter Store ARNs to pass to the task as environment variables.
-     */
-    secrets?: SecretFromInput[];
-
-    /**
-     * An array of subnet IDs that the service should utilize. Must be subnets that are within the VPC provided in
-     * `vpcId`. Ideally you should supply one subnet for each Availability Zone available in your region. The subnets
-     * are assumed to be private subnets - the service will not be allocated a public IP and will need a route to a NAT
-     * gateway in order to access the internet.
-     *
-     * Eg `[ "subnet-6e76bba91252cf919", "subnet-bbb9026a13a08b2ea" ]`
-     */
-    subnetIds: pulumi.Input<string[]>;
-
-    /**
-     * An IAM policy defining what AWS permissions you would like the container(s) in your service to have. Defaults to
-     * having no permissions
-     */
-    taskPolicy?: aws.iam.PolicyDocument;
-
-    /**
-     * ID of the VPC the service should be provisioned in.
-     *
-     * Eg `vpc-1aa478ffc`
-     */
-    vpcId: pulumi.Input<string>;
-}
-
-export class FargateService extends pulumi.ComponentResource {
+export default class FargateService extends pulumi.ComponentResource {
     readonly executionRole: aws.iam.Role;
-
-    readonly logGroup: aws.cloudwatch.LogGroup;
 
     readonly securityGroup: aws.ec2.SecurityGroup;
 
@@ -149,46 +18,31 @@ export class FargateService extends pulumi.ComponentResource {
     constructor(name: string, args: FargateServiceArgs, opts?: pulumi.ComponentResourceOptions) {
         super('FargateService', name, args, opts);
 
-        const defaults = {
-            cpu: 256,
-            logRetention: 14,
-            memory: 512,
-        };
-
         const {
-            albListenerArn,
-            albSecurityGroupId,
+            albConfig,
             clusterName,
-            containerImage,
+            containers,
             cpu,
-            logRetention,
             memory,
             namespace,
-            port,
             repositoryCredentialsArn,
-            secrets,
             subnetIds,
             taskPolicy,
             vpcId,
-        } = { ...defaults, ...args };
+        } = this.validateArgs(args, {
+            cpu: 256,
+            memory: 512,
+            namespace: `${name}-${pulumi.getStack()}`,
+        });
 
-        const prefix = namespace ?? `${name}-${pulumi.getStack()}`;
         const { name: region } = pulumi.output(aws.getRegion());
-
-        // Everything from the pgweb container's stdout will be stored in this log group
-        const logGroup = new aws.cloudwatch.LogGroup(
-            `${prefix}-log-group`,
-            {
-                retentionInDays: logRetention,
-            },
-            { parent: this },
-        );
+        const { accountId } = pulumi.output(aws.getCallerIdentity());
 
         // A role that AWS assumes in order to *launch* the task (not the role that the task itself assumes)
         const executionRole = new aws.iam.Role(
-            `${prefix}-execution-role`,
+            `${namespace}-execution-role`,
             {
-                description: `Allows the AWS ECS service to create and manage the ${prefix} service`,
+                description: `Allows the AWS ECS service to create and manage the ${namespace} service`,
                 assumeRolePolicy: {
                     Version: '2012-10-17',
                     Statement: [
@@ -213,33 +67,45 @@ export class FargateService extends pulumi.ComponentResource {
             { parent: executionRole },
         );
 
-        // Policy allowing ECS to write to the container's log group
-        const executionPolicyLogs = new aws.iam.RolePolicy(
-            'logs-policy',
-            {
-                role: executionRole,
-                policy: {
-                    Version: '2012-10-17',
-                    Statement: [
-                        {
-                            Effect: 'Allow',
-                            Action: ['logs:CreateLogStream', 'logs:PutLogEvents'],
-                            Resource: pulumi.interpolate`${logGroup.arn}:*`,
-                        },
-                    ],
+        const logGroupArns = containers.reduce((arns, { logGroupName }) => {
+            if (logGroupName) {
+                arns.push(pulumi.interpolate`arn:aws:logs:${region}:${accountId}:log-group:/${logGroupName}:*`);
+            }
+            return arns;
+        }, [] as pulumi.Input<string>[]);
+
+        if (logGroupArns.length > 0) {
+            // Policy allowing ECS to write to the all relevant log groups
+            const executionPolicyLogs = new aws.iam.RolePolicy(
+                'logs-policy',
+                {
+                    role: executionRole,
+                    policy: {
+                        Version: '2012-10-17',
+                        Statement: [
+                            {
+                                Effect: 'Allow',
+                                Action: ['logs:CreateLogStream', 'logs:PutLogEvents'],
+                                Resource: logGroupArns,
+                            },
+                        ],
+                    },
                 },
-            },
-            { parent: executionRole },
+                { parent: executionRole },
+            );
+        }
+
+        const allSecrets = containers.reduce(
+            (secrets, container) => (container.secrets ? [...secrets, ...container.secrets] : secrets),
+            [] as SecretFromInput[],
         );
 
-        // If secrets have been supplied, we also need to create policies allowing access to them
-        if (secrets) {
-            const smSecrets = secrets.filter((s) => s.source === 'secrets-manager').map((s) => s.valueFromArn);
-            const psSecrets = secrets.filter((s) => s.source === 'parameter-store').map((s) => s.valueFromArn);
+        // If secrets have been supplied, create policies allowing access to them
+        if (allSecrets) {
+            const smSecrets = allSecrets.filter((s) => s.source === 'secrets-manager').map((s) => s.valueFromArn);
+            const psSecrets = allSecrets.filter((s) => s.source === 'parameter-store').map((s) => s.valueFromArn);
 
             if (smSecrets.length > 0) {
-                // Since its possible for multiples of the secrets manager secrets to be used with different keys, we
-                // need to generate a list of unique resource ARNs
                 const uniqueArns = pulumi.all(smSecrets).apply((arns) => [...new Set(arns)]);
 
                 const secretsManagerPolicy = new aws.iam.RolePolicy(
@@ -262,6 +128,8 @@ export class FargateService extends pulumi.ComponentResource {
             }
 
             if (psSecrets.length > 0) {
+                const uniqueArns = pulumi.all(psSecrets).apply((arns) => [...new Set(arns)]);
+
                 const parameterStorePolicy = new aws.iam.RolePolicy(
                     'parameter-store-policy',
                     {
@@ -272,7 +140,7 @@ export class FargateService extends pulumi.ComponentResource {
                                 {
                                     Effect: 'Allow',
                                     Action: 'ssm:GetParameter*',
-                                    Resource: psSecrets,
+                                    Resource: uniqueArns,
                                 },
                             ],
                         },
@@ -306,7 +174,7 @@ export class FargateService extends pulumi.ComponentResource {
 
         // The role the actual task itself will assume
         const taskRole = new aws.iam.Role(
-            `${prefix}-task-role`,
+            `${namespace}-task-role`,
             {
                 assumeRolePolicy: {
                     Version: '2012-10-17',
@@ -326,7 +194,7 @@ export class FargateService extends pulumi.ComponentResource {
 
         if (taskPolicy) {
             const taskRolePolicy = new aws.iam.RolePolicy(
-                `${prefix}-role-policy`,
+                `${namespace}-role-policy`,
                 {
                     role: taskRole,
                     policy: taskPolicy,
@@ -336,10 +204,10 @@ export class FargateService extends pulumi.ComponentResource {
         }
 
         const securityGroup = new aws.ec2.SecurityGroup(
-            `${prefix}-service-sg`,
+            `${namespace}-service-sg`,
             {
                 vpcId,
-                description: `Controls access to the ${prefix} service`,
+                description: `Controls access to the ${namespace} service`,
             },
             { parent: this },
         );
@@ -357,56 +225,6 @@ export class FargateService extends pulumi.ComponentResource {
             { parent: securityGroup },
         );
 
-        let albConfig: aws.types.input.ecs.ServiceLoadBalancer | undefined;
-        let listenerRule: aws.lb.ListenerRule | undefined;
-
-        if (albSecurityGroupId) {
-            const ingressFromAlb = new aws.ec2.SecurityGroupRule(
-                'ingress-from-alb-rule',
-                {
-                    type: 'ingress',
-                    securityGroupId: securityGroup.id,
-                    protocol: 'TCP',
-                    fromPort: port,
-                    toPort: port,
-                    sourceSecurityGroupId: albSecurityGroupId,
-                },
-                { parent: securityGroup },
-            );
-
-            const targetGroup = new aws.lb.TargetGroup(
-                `${prefix}-tg`,
-                {
-                    deregistrationDelay: 10,
-                    vpcId: args.vpcId,
-                    port,
-                    targetType: 'ip',
-                    protocol: 'HTTP',
-                    slowStart: 30,
-                    healthCheck: {
-                        path: '/',
-                        healthyThreshold: 4,
-                        unhealthyThreshold: 2,
-                        interval: 15,
-                        timeout: 10,
-                    },
-                },
-                { parent: this },
-            );
-
-            listenerRule = new aws.lb.ListenerRule(
-                `${prefix}-listener-rule`,
-                {
-                    listenerArn: albListenerArn,
-                    conditions: [{ pathPattern: { values: ['/*'] } }],
-                    actions: [{ type: 'forward', targetGroupArn: targetGroup.arn }],
-                },
-                { parent: this, deleteBeforeReplace: true },
-            );
-
-            albConfig = { containerPort: port, targetGroupArn: targetGroup.arn, containerName: 'container' };
-        }
-
         const randomId = new random.RandomId(
             'task-definition-family-id',
             {
@@ -416,66 +234,157 @@ export class FargateService extends pulumi.ComponentResource {
         );
 
         const taskDefinition = new aws.ecs.TaskDefinition(
-            `${prefix}-task-definition`,
+            `${namespace}-task-definition`,
             {
-                family: pulumi.interpolate`${prefix}-${randomId.hex}`,
+                family: pulumi.interpolate`${namespace}-${randomId.hex}`,
                 executionRoleArn: executionRole.arn,
                 taskRoleArn: taskRole.arn,
                 networkMode: 'awsvpc',
                 requiresCompatibilities: ['FARGATE'],
                 cpu: cpu.toString(),
                 memory: memory.toString(),
-                containerDefinitions: pulumi.all([logGroup.name, region]).apply(([logGroupName, logRegion]) =>
-                    JSON.stringify([
-                        {
-                            name: 'container',
-                            image: containerImage,
-                            portMappings: [{ containerPort: port }],
-                            logConfiguration: {
-                                logDriver: 'awslogs',
-                                options: {
-                                    'awslogs-group': logGroupName,
-                                    'awslogs-region': logRegion,
-                                    'awslogs-stream-prefix': 'container',
-                                },
-                            },
-                        },
-                    ]),
-                ),
+                containerDefinitions: pulumi.output(containers).apply((defs) => JSON.stringify(defs)),
             },
             { parent: this },
         );
 
-        const service = new aws.ecs.Service(
-            `${prefix}-service`,
-            {
-                cluster: clusterName,
-                launchType: 'FARGATE',
-                desiredCount: 1,
-                deploymentMinimumHealthyPercent: 100,
-                loadBalancers: albConfig && [albConfig],
-                taskDefinition: taskDefinition.arn,
-                waitForSteadyState: true,
-                networkConfiguration: {
-                    securityGroups: [securityGroup.id],
-                    subnets: subnetIds,
+        let service: aws.ecs.Service;
+
+        if (albConfig) {
+            const ingressFromAlb = new aws.ec2.SecurityGroupRule(
+                'ingress-from-alb-rule',
+                {
+                    type: 'ingress',
+                    securityGroupId: securityGroup.id,
+                    protocol: 'TCP',
+                    fromPort: albConfig.portMapping.containerPort,
+                    toPort: albConfig.portMapping.containerPort,
+                    sourceSecurityGroupId: albConfig.securityGroupId,
                 },
-            },
-            {
-                parent: this,
-                // The service needs to depend on the listener rule since AWS will not add a service to a target group
-                // until the target group is associated with a listener which doesn't occur until the listener rule is
-                // created. This lets Pulumi know of this implicit dependency so it won't try (and fail) to create the
-                // service
-                dependsOn: listenerRule,
-            },
-        );
+                { parent: securityGroup },
+            );
+
+            const targetGroup = new aws.lb.TargetGroup(
+                `${namespace}-tg`,
+                {
+                    deregistrationDelay: 10,
+                    vpcId: args.vpcId,
+                    targetType: 'ip',
+                    protocol: 'HTTP',
+                    slowStart: 30,
+                    healthCheck: albConfig.healthCheckConfig,
+                },
+                { parent: this },
+            );
+
+            const listenerRule = new aws.lb.ListenerRule(
+                `${namespace}-listener-rule`,
+                {
+                    listenerArn: albConfig.listenerArn,
+                    conditions: [{ pathPattern: { values: ['/*'] } }],
+                    actions: [{ type: 'forward', targetGroupArn: targetGroup.arn }],
+                },
+                { parent: this, deleteBeforeReplace: true },
+            );
+
+            service = new aws.ecs.Service(
+                `${namespace}-service`,
+                {
+                    cluster: clusterName,
+                    launchType: 'FARGATE',
+                    desiredCount: 1,
+                    deploymentMinimumHealthyPercent: 100,
+                    loadBalancers: [{ ...albConfig.portMapping, targetGroupArn: targetGroup.arn }],
+                    taskDefinition: taskDefinition.arn,
+                    waitForSteadyState: true,
+                    networkConfiguration: {
+                        securityGroups: [securityGroup.id],
+                        subnets: subnetIds,
+                    },
+                },
+                {
+                    parent: this,
+                    // The service needs to depend on the listener rule since AWS will not add a service to a target group
+                    // until the target group is associated with a listener which doesn't occur until the listener rule is
+                    // created. This lets Pulumi know of this implicit dependency so it won't try (and fail) to create the
+                    // service
+                    dependsOn: listenerRule,
+                },
+            );
+        } else {
+            service = new aws.ecs.Service(
+                `${namespace}-service`,
+                {
+                    cluster: clusterName,
+                    launchType: 'FARGATE',
+                    desiredCount: 1,
+                    deploymentMinimumHealthyPercent: 100,
+                    taskDefinition: taskDefinition.arn,
+                    waitForSteadyState: true,
+                    networkConfiguration: {
+                        securityGroups: [securityGroup.id],
+                        subnets: subnetIds,
+                    },
+                },
+                {
+                    parent: this,
+                },
+            );
+        }
 
         this.executionRole = executionRole;
-        this.logGroup = logGroup;
         this.securityGroup = securityGroup;
         this.service = service;
         this.taskDefinition = taskDefinition;
         this.taskRole = taskRole;
+
+        // https://www.pulumi.com/docs/intro/concepts/resources/#registering-component-outputs
+        this.registerOutputs();
+    }
+
+    // eslint-disable-next-line class-methods-use-this
+    private validateArgs(input: FargateServiceArgs, defaults: FargateServiceDefaults): FargateServiceArgsWithDefaults {
+        const errors: string[] = [];
+        const args = { ...defaults, ...input };
+
+        // CPU and Memory validation
+        if (!validCpuMemoryCombinations.includes([args.cpu, args.memory])) {
+            errors.push(
+                `CPU: ${args.cpu} and Memory: ${args.memory} is an unsupported combination, see https://docs.aws.amazon.com/AmazonECS/latest/developerguide/AWS_Fargate.html for valid combinations`,
+            );
+        }
+
+        const sumOfCpuAllocation = args.containers.reduce((sum, c) => (c.cpu ? sum + c.cpu : sum), 0);
+
+        if (sumOfCpuAllocation > args.cpu) {
+            errors.push(
+                `Sum of CPU allocation for all containers ${sumOfCpuAllocation} exceeds the CPU limit set for the task ${args.cpu}`,
+            );
+        }
+
+        const sumOfMemoryAllocation = args.containers.reduce((sum, c) => (c.memory ? sum + c.memory : sum), 0);
+
+        if (sumOfMemoryAllocation > args.memory) {
+            errors.push(
+                `Sum of memory allocation for all containers ${sumOfMemoryAllocation} exceeds the memory limit set for the task ${args.memory}`,
+            );
+        }
+
+        // Namespace - must be <= 22 characters. Anything longer means the target group physical name will exceed the 32
+        // character limit defined by AWS.
+        // 22 + random-7-letter-suffix + '-tg' = 32
+        if (args.namespace.length > 22) {
+            errors.push(
+                `Namespace cannot be longer than 22 characters. "${args.namespace}" is ${args.namespace.length} characters`,
+            );
+        }
+
+        if (errors.length > 0) {
+            const errStr = errors.reduce((str, err) => `${str}\t- ${err}\n`, '');
+
+            throw new pulumi.ResourceError(`Invalid FargateService args:\n${errStr}`, this);
+        }
+
+        return args;
     }
 }
