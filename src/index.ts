@@ -6,7 +6,8 @@ const cfg = new pulumi.Config();
 const prefix = `pgweb-${pulumi.getStack()}`;
 
 const vpcId = cfg.require('vpcId');
-const subnetIds = cfg.requireObject<string[]>('subnetIds');
+const albSubnetIds = cfg.requireObject<string[]>('albSubnetIds');
+const pgwebSubnetIds = cfg.requireObject<string[]>('pgwebSubnetIds');
 
 const cluster = new aws.ecs.Cluster(`${prefix}-cluster`);
 
@@ -30,7 +31,7 @@ const albIngressRule = new aws.ec2.SecurityGroupRule(
 
 const alb = new aws.lb.LoadBalancer(`${prefix}-alb`, {
     securityGroups: [albSecurityGroup.id],
-    subnets: subnetIds,
+    subnets: albSubnetIds,
 });
 
 const listener = new aws.lb.Listener(
@@ -53,16 +54,22 @@ const listener = new aws.lb.Listener(
 );
 
 const service = new FargateService('pgweb-service', {
+    albConfig: {
+        listenerArn: listener.arn,
+        securityGroupId: albSecurityGroup.id,
+        portMapping: { containerName: 'pgweb', containerPort: 8081 },
+    },
     clusterName: cluster.name,
     containers: [
         {
             name: 'pgweb',
             image: 'sosedoff/pgweb',
             logGroupName: 'asd',
+            portMappings: [{ containerPort: 8081, protocol: 'tcp' }],
         },
     ],
     namespace: prefix,
-    subnetIds,
+    subnetIds: pgwebSubnetIds,
     vpcId,
 });
 

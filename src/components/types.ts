@@ -58,6 +58,11 @@ interface FargateContainerDefinition
 
 interface ServiceAlbConfiguration {
     /**
+     * ALB Healthcheck configuration
+     */
+    healthCheckConfig?: aws.types.input.lb.TargetGroupHealthCheck;
+
+    /**
      * ARN of an ALB listener to use for this service. A rule will be created to route relevant requests to the service
      *
      * Eg `arn:aws:elasticloadbalancing:<AWS_REGION>:<ACCOUNT_ID>:listener/app/name-of-alb/24cc901288efd990/eacc674b53cedc2d`
@@ -65,11 +70,12 @@ interface ServiceAlbConfiguration {
     listenerArn: pulumi.Input<string>;
 
     /**
-     * ID of a Security Group that contains the ALB that will be handling traffic for this service.
-     *
-     * Eg `sg-9879a8e7dacd`
+     * Priority for the listener rule. Use this to ensure the rule created for this service won't clash with any
+     * existing rules on the listener. Must be a positive number between 1 and 50,000 (inclusive). If the listener will
+     * only contain this rule, you can leave this undefined and the resulting rule will be given the next available
+     * priority on creation
      */
-    securityGroupId: pulumi.Input<string>;
+    rulePriority?: number;
 
     /**
      * Which port on which container (by name) should the ALB route incoming traffic to
@@ -77,9 +83,11 @@ interface ServiceAlbConfiguration {
     portMapping: Omit<aws.types.input.ecs.ServiceLoadBalancer, 'targetGroupArn' | 'elbName'>;
 
     /**
-     * ALB Healthcheck configuration
+     * ID of a Security Group that contains the ALB that will be handling traffic for this service.
+     *
+     * Eg `sg-9879a8e7dacd`
      */
-    healthCheckConfig?: aws.types.input.lb.TargetGroupHealthCheck;
+    securityGroupId: pulumi.Input<string>;
 }
 
 export interface FargateServiceArgs {

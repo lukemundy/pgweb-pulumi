@@ -248,7 +248,8 @@ export default class FargateService extends pulumi.ComponentResource {
             { parent: this },
         );
 
-        let service: aws.ecs.Service;
+        const loadBalancers: aws.types.input.ecs.ServiceLoadBalancer[] = [];
+        const serviceOpts: pulumi.ResourceOptions = {};
 
         if (albConfig) {
             const ingressFromAlb = new aws.ec2.SecurityGroupRule(
@@ -270,6 +271,7 @@ export default class FargateService extends pulumi.ComponentResource {
                     deregistrationDelay: 10,
                     vpcId: args.vpcId,
                     targetType: 'ip',
+                    port: albConfig.portMapping.containerPort,
                     protocol: 'HTTP',
                     slowStart: 30,
                     healthCheck: albConfig.healthCheckConfig,
@@ -280,6 +282,7 @@ export default class FargateService extends pulumi.ComponentResource {
             const listenerRule = new aws.lb.ListenerRule(
                 `${namespace}-listener-rule`,
                 {
+                    priority: albConfig.rulePriority,
                     listenerArn: albConfig.listenerArn,
                     conditions: [{ pathPattern: { values: ['/*'] } }],
                     actions: [{ type: 'forward', targetGroupArn: targetGroup.arn }],
@@ -287,50 +290,34 @@ export default class FargateService extends pulumi.ComponentResource {
                 { parent: this, deleteBeforeReplace: true },
             );
 
-            service = new aws.ecs.Service(
-                `${namespace}-service`,
-                {
-                    cluster: clusterName,
-                    launchType: 'FARGATE',
-                    desiredCount: 1,
-                    deploymentMinimumHealthyPercent: 100,
-                    loadBalancers: [{ ...albConfig.portMapping, targetGroupArn: targetGroup.arn }],
-                    taskDefinition: taskDefinition.arn,
-                    waitForSteadyState: true,
-                    networkConfiguration: {
-                        securityGroups: [securityGroup.id],
-                        subnets: subnetIds,
-                    },
-                },
-                {
-                    parent: this,
-                    // The service needs to depend on the listener rule since AWS will not add a service to a target group
-                    // until the target group is associated with a listener which doesn't occur until the listener rule is
-                    // created. This lets Pulumi know of this implicit dependency so it won't try (and fail) to create the
-                    // service
-                    dependsOn: listenerRule,
-                },
-            );
-        } else {
-            service = new aws.ecs.Service(
-                `${namespace}-service`,
-                {
-                    cluster: clusterName,
-                    launchType: 'FARGATE',
-                    desiredCount: 1,
-                    deploymentMinimumHealthyPercent: 100,
-                    taskDefinition: taskDefinition.arn,
-                    waitForSteadyState: true,
-                    networkConfiguration: {
-                        securityGroups: [securityGroup.id],
-                        subnets: subnetIds,
-                    },
-                },
-                {
-                    parent: this,
-                },
-            );
+            loadBalancers.push({ ...albConfig.portMapping, targetGroupArn: targetGroup.arn });
+
+            // The service needs to depend on the listener rule since AWS will not add a service to a target group until
+            // the target group is associated with a listener which doesn't occur until the listener rule is created.
+            // This lets Pulumi know of this implicit dependency so it won't try (and fail) to create the service
+            serviceOpts.dependsOn = listenerRule;
         }
+
+        const service = new aws.ecs.Service(
+            `${namespace}-service`,
+            {
+                loadBalancers,
+                cluster: clusterName,
+                launchType: 'FARGATE',
+                desiredCount: 1,
+                deploymentMinimumHealthyPercent: 100,
+                taskDefinition: taskDefinition.arn,
+                waitForSteadyState: true,
+                networkConfiguration: {
+                    securityGroups: [securityGroup.id],
+                    subnets: subnetIds,
+                },
+            },
+            {
+                parent: this,
+                ...serviceOpts,
+            },
+        );
 
         this.executionRole = executionRole;
         this.securityGroup = securityGroup;
@@ -348,7 +335,7 @@ export default class FargateService extends pulumi.ComponentResource {
         const args = { ...defaults, ...input };
 
         // CPU and Memory validation
-        if (!validCpuMemoryCombinations.includes([args.cpu, args.memory])) {
+        if (!validCpuMemoryCombinations.includes(`${args.cpu}x${args.memory}`)) {
             errors.push(
                 `CPU: ${args.cpu} and Memory: ${args.memory} is an unsupported combination, see https://docs.aws.amazon.com/AmazonECS/latest/developerguide/AWS_Fargate.html for valid combinations`,
             );
@@ -377,6 +364,13 @@ export default class FargateService extends pulumi.ComponentResource {
             errors.push(
                 `Namespace cannot be longer than 22 characters. "${args.namespace}" is ${args.namespace.length} characters`,
             );
+        }
+
+        const priority = args.albConfig?.rulePriority;
+
+        // Listener rule priority must be between 1 and 50,000
+        if (priority && (priority < 1 || priority > 50_000)) {
+            errors.push(`Listener rule priority must be between 1 and 50,000`);
         }
 
         if (errors.length > 0) {
