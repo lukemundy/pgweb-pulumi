@@ -70,10 +70,18 @@ interface ServiceAlbConfiguration {
     listenerArn: pulumi.Input<string>;
 
     /**
+     * Additional actions to add to the listener rule created by this service. These actions will be performed prior to
+     * the final `forward` action that sends requests to the service's target group. This is useful when you want to
+     * require that requests are first authenticated via Cognito or another OpenID Connect provider prior to being
+     * served to your service.
+     */
+    ruleActions?: Omit<aws.types.input.lb.ListenerRuleAction, 'order'>[];
+
+    /**
      * Priority for the listener rule. Use this to ensure the rule created for this service won't clash with any
      * existing rules on the listener. Must be a positive number between 1 and 50,000 (inclusive). If the listener will
      * only contain this rule, you can leave this undefined and the resulting rule will be given the next available
-     * priority on creation
+     * priority on creation. Rules are evaluated in ascending order (lowest to highest)
      */
     rulePriority?: number;
 

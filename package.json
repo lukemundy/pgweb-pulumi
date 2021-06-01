@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "@pulumi/aws": "^3.36.0",
+    "@pulumi/okta": "^3.0.0",
     "@pulumi/pulumi": "^2.24.1",
     "@pulumi/random": "^3.1.1"
   }

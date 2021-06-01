@@ -2,6 +2,7 @@ import * as pulumi from '@pulumi/pulumi';
 import * as aws from '@pulumi/aws';
 import FargateService from './components/fargate-service';
 import { certificate } from './certificate';
+import { app, server } from './okta';
 
 const cfg = new pulumi.Config();
 const prefix = `pgweb-${pulumi.getStack()}`;
@@ -11,12 +12,33 @@ const albSubnetIds = cfg.requireObject<string[]>('albSubnetIds');
 const pgwebSubnetIds = cfg.requireObject<string[]>('pgwebSubnetIds');
 const zoneId = cfg.require('hostedZoneId');
 
+// OIDC settings
+const { clientId, clientSecret } = app;
+const { issuer } = server;
+const authorizationEndpoint = pulumi.interpolate`${issuer}/v1/authorize`;
+const tokenEndpoint = pulumi.interpolate`${issuer}/v1/token`;
+const userInfoEndpoint = pulumi.interpolate`${issuer}/v1/userinfo`;
+
 const cluster = new aws.ecs.Cluster(`${prefix}-cluster`);
 
 const albSecurityGroup = new aws.ec2.SecurityGroup(`${prefix}-alb-sg`, {
     vpcId,
     description: `Controls access to the ${prefix} load balancer`,
 });
+
+// This is needed so the ALB can communicate with the Okta IDP and verify tokens
+const albEgressRule = new aws.ec2.SecurityGroupRule(
+    'https-engress-rule',
+    {
+        type: 'egress',
+        securityGroupId: albSecurityGroup.id,
+        protocol: 'TCP',
+        fromPort: 443,
+        toPort: 443,
+        cidrBlocks: ['0.0.0.0/0'],
+    },
+    { parent: albSecurityGroup },
+);
 
 const albHttpIngressRule = new aws.ec2.SecurityGroupRule(
     'http-ingress-rule',
@@ -87,10 +109,26 @@ const httpsListener = new aws.lb.Listener(
     { parent: alb },
 );
 
+// If OIDC information was provided, create a listener rule action
+const authAction = {
+    type: 'authenticate-oidc',
+    authenticateOidc: {
+        onUnauthenticatedRequest: 'authenticate',
+        clientId,
+        clientSecret,
+        authorizationEndpoint,
+        tokenEndpoint,
+        userInfoEndpoint,
+        issuer,
+        sessionTimeout: 14_400, // 4 hours
+    },
+};
+
 const service = new FargateService('pgweb-service', {
     albConfig: {
         listenerArn: httpsListener.arn,
         securityGroupId: albSecurityGroup.id,
+        ruleActions: authAction && [authAction],
         portMapping: { containerName: 'pgweb', containerPort: 8081 },
     },
     clusterName: cluster.name,
@@ -135,4 +173,3 @@ export const taskRoleArn = service.taskRole.arn;
 export const albDnsName = alb.dnsName;
 export const albSecurityGroupId = albSecurityGroup.id;
 export const certificateArn = certificate.arn;
-export const pgwebUrl = pulumi.interpolate`https://${pgwebDns.fqdn}`;

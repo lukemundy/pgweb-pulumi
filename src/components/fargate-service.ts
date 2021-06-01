@@ -252,15 +252,24 @@ export default class FargateService extends pulumi.ComponentResource {
         const serviceOpts: pulumi.ResourceOptions = {};
 
         if (albConfig) {
+            const {
+                healthCheckConfig,
+                listenerArn,
+                ruleActions,
+                rulePriority,
+                portMapping,
+                securityGroupId,
+            } = albConfig;
+
             const ingressFromAlb = new aws.ec2.SecurityGroupRule(
                 'ingress-from-alb-rule',
                 {
                     type: 'ingress',
                     securityGroupId: securityGroup.id,
                     protocol: 'TCP',
-                    fromPort: albConfig.portMapping.containerPort,
-                    toPort: albConfig.portMapping.containerPort,
-                    sourceSecurityGroupId: albConfig.securityGroupId,
+                    fromPort: portMapping.containerPort,
+                    toPort: portMapping.containerPort,
+                    sourceSecurityGroupId: securityGroupId,
                 },
                 { parent: securityGroup },
             );
@@ -271,26 +280,36 @@ export default class FargateService extends pulumi.ComponentResource {
                     deregistrationDelay: 10,
                     vpcId: args.vpcId,
                     targetType: 'ip',
-                    port: albConfig.portMapping.containerPort,
+                    port: portMapping.containerPort,
                     protocol: 'HTTP',
                     slowStart: 30,
-                    healthCheck: albConfig.healthCheckConfig,
+                    healthCheck: healthCheckConfig,
                 },
                 { parent: this },
             );
 
+            const actions: aws.types.input.lb.ListenerRuleAction[] = [];
+
+            if (ruleActions) ruleActions.forEach((action, index) => actions.push({ order: index + 1, ...action }));
+
+            actions.push({
+                order: ruleActions?.length ? ruleActions.length + 1 : 1,
+                type: 'forward',
+                targetGroupArn: targetGroup.arn,
+            });
+
             const listenerRule = new aws.lb.ListenerRule(
                 `${namespace}-listener-rule`,
                 {
-                    priority: albConfig.rulePriority,
-                    listenerArn: albConfig.listenerArn,
+                    priority: rulePriority,
+                    listenerArn,
                     conditions: [{ pathPattern: { values: ['/*'] } }],
-                    actions: [{ type: 'forward', targetGroupArn: targetGroup.arn }],
+                    actions,
                 },
                 { parent: this, deleteBeforeReplace: true },
             );
 
-            loadBalancers.push({ ...albConfig.portMapping, targetGroupArn: targetGroup.arn });
+            loadBalancers.push({ ...portMapping, targetGroupArn: targetGroup.arn });
 
             // The service needs to depend on the listener rule since AWS will not add a service to a target group until
             // the target group is associated with a listener which doesn't occur until the listener rule is created.
