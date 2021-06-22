@@ -1,0 +1,52 @@
+config:
+
+  #
+  # AWS Configuration - https://www.pulumi.com/docs/intro/cloud-providers/aws/setup/
+  #
+
+  # Which AWS region to deploy resources to
+  aws:region: ap-southeast-1
+
+  # OPTIONAL: Specify which AWS Credential Profile to use. These profiles are set up via `aws configure` and are kept in
+  # ~/.aws/credentials. If you do not provide a profile, Pulumi will use credentials from environment variables or from
+  # the default profile (in that order)
+  # aws:profile: default
+
+  #
+  # Okta Configuration - https://www.pulumi.com/docs/reference/pkg/okta/provider/
+  #
+
+  # OPTIONAL: Okta URL - Use 'oktapreview.com' for Okta testing. If not set it defaults to 'okta.com'
+  # pgweb-pulumi:oktaBaseUrl: okta.com
+
+  # Organisation name - typically the same as whats in your organisations Okta URL ie https://<orgname>.okta.com/
+  pgweb-pulumi:oktaOrgName: myorg
+
+  # API Token - this shouldn't be set by hand and instead done via the CLI `pulumi config set --secret oktaApiToken`
+  # however note that by doing so, all comments and formatting will be stripped from this file. You can copy/paste the
+  # encrypted secret back into the file after you've restore the comments if you wish
+  # pgweb-pulumi:oktaApiToken:
+  #   secure: AAABAAZAhCGqvzLYwWC7MD/v0EPWoFOFZNHaS/3hZUfN02Lz/IWge+lgTCnmoPWTdUxjyOpsET2xcF+qpXut40jpNscRSJmJiVM=
+
+  #
+  # Networking Configuration
+  #
+
+  # ID for a public Route 53 hosted zone you want the pgweb DNS record to be created in eg:
+  # https://pgweb-<stackname>.yourdomain.io/
+  pgweb-pulumi:hostedZoneId: ZY6OA58ER114
+
+  # VPC to deploy resources to
+  pgweb-pulumi:vpcId: vpc-f074f0a5ee952a1fa
+
+  # Subnets the ALB should utilize. These should be public subnets for 2 or more different AZs
+  pgweb-pulumi:albSubnetIds:
+    - subnet-9e607c3514cc4834e
+    - subnet-8d5ba140774585df8
+    - subnet-07f521b04ab278dd4
+
+  # Subnets for the pgweb Fargate tasks to reside in. These should be private subnets with access to a NAT Gateway
+  pgweb-pulumi:pgwebSubnetIds:
+    - subnet-df1d929f83cb1b70a
+    - subnet-6d847ed4858e44998
+    - subnet-b06a653d8344acffe

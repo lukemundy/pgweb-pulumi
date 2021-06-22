@@ -1,2 +1,6 @@
 /bin/
 /node_modules/
+
+# Ignore all stack config except for the example file
+/config/*
+!/config/Pulumi.example.yaml

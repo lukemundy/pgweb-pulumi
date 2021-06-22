@@ -10,7 +10,7 @@ const domain = pulumi.output(aws.route53.getZone({ zoneId }));
 const url = pulumi.interpolate`https://${prefix}.${domain.name}`;
 
 const provider = new okta.Provider('okta-provider', {
-    baseUrl: cfg.require('oktaBaseUrl'),
+    baseUrl: cfg.get('oktaBaseUrl') ?? 'okta.com',
     orgName: cfg.require('oktaOrgName'),
     apiToken: cfg.requireSecret('oktaApiToken'),
 });
