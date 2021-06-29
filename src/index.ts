@@ -157,6 +157,28 @@ const service = new FargateService('pgweb-service', {
     vpcId,
 });
 
+// Allow the service access to any supplied databases
+interface DbIngressRule {
+    id: string;
+    port: number;
+}
+
+const sgIngressRules = cfg.getObject<DbIngressRule[]>('sgIngressRules');
+
+if (sgIngressRules && sgIngressRules.length > 0) {
+    const rules = sgIngressRules.map(
+        ({ id, port }) =>
+            new aws.ec2.SecurityGroupRule(`ingress-to-${id}`, {
+                type: 'ingress',
+                securityGroupId: id,
+                protocol: 'TCP',
+                fromPort: port,
+                toPort: port,
+                sourceSecurityGroupId: service.securityGroup.id,
+            }),
+    );
+}
+
 const albEgressToServiceRule = new aws.ec2.SecurityGroupRule(
     'egress-to-service-rule',
     {

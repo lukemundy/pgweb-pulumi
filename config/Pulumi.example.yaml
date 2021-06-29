@@ -51,6 +51,14 @@ config:
     - subnet-6d847ed4858e44998
     - subnet-b06a653d8344acffe
 
+  # OPTIONAL: List of security group IDs containing databases you wish to connect to. If supplied, Pulumi will add the
+  # relevant ingress rule allowing pgweb to connect to it
+  # pgweb-pulumi:sgIngressRules:
+  #   - id: sg-c3e9fe5fb57c07e4a
+  #     port: 5432
+  #   - id: sg-7fac51f95a2f45cd1
+  #     port: 5432
+
   #
   # Logging
   #
