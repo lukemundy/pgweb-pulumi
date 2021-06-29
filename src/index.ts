@@ -117,7 +117,7 @@ const httpsListener = new aws.lb.Listener(
     { parent: alb },
 );
 
-// If OIDC information was provided, create a listener rule action
+// Create a listener rule action that performs OIDC auth
 const authAction = {
     type: 'authenticate-oidc',
     authenticateOidc: {
@@ -136,7 +136,7 @@ const service = new FargateService('pgweb-service', {
     albConfig: {
         listenerArn: httpsListener.arn,
         securityGroupId: albSecurityGroup.id,
-        ruleActions: authAction && [authAction],
+        ruleActions: [authAction],
         portMapping: { containerName: 'pgweb', containerPort: 8081 },
         healthCheckConfig: {
             enabled: true,
