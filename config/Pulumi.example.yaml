@@ -29,6 +29,20 @@ config:
   #   secure: AAABAAZAhCGqvzLYwWC7MD/v0EPWoFOFZNHaS/3hZUfN02Lz/IWge+lgTCnmoPWTdUxjyOpsET2xcF+qpXut40jpNscRSJmJiVM=
 
   #
+  # Container Configuration
+  #
+
+  # OPTIONAL: Docker image to use. If not provided the container from https://hub.docker.com/r/sosedoff/pgweb/ is used.
+  # This is useful if you'd like to build/manage your own image to bake a bookmarks file into it or maybe just to host
+  # it on your own registry
+  # pgweb-pulumi:container: <aws_account_id>.dkr.ecr.<region>.amazonaws.com/pgweb:latest
+
+  # OPTIONAL: If you're using a container from a private registry above, you'll also need to provide an ARN to an AWS
+  # Secrets Manager secret containing the credentials AWS needs to authenticate with it.
+  # https://docs.aws.amazon.com/AmazonECS/latest/developerguide/private-auth.html
+  # pgweb-pulumi:repositoryCredentials: arn:aws:secretsmanager:<region>:<aws_account_id>:secret:secret_name
+
+  #
   # Networking Configuration
   #
 

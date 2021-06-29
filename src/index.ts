@@ -144,10 +144,11 @@ const service = new FargateService('pgweb-service', {
         },
     },
     clusterName: cluster.name,
+    repositoryCredentialsArn: cfg.get('repositoryCredentials'),
     containers: [
         {
             name: 'pgweb',
-            image: 'sosedoff/pgweb',
+            image: cfg.get('container') ?? 'sosedoff/pgweb',
             logGroupName: 'asd',
             portMappings: [{ containerPort: 8081, protocol: 'tcp' }],
         },
