@@ -1,7 +1,13 @@
 import * as pulumi from '@pulumi/pulumi';
 import * as aws from '@pulumi/aws';
 import * as random from '@pulumi/random';
-import { FargateServiceArgs, FargateServiceDefaults, FargateServiceArgsWithDefaults, SecretFromInput } from './types';
+import {
+    FargateServiceArgs,
+    FargateServiceDefaults,
+    FargateServiceArgsWithDefaults,
+    SecretFromInput,
+    FargateContainerDefinition,
+} from './types';
 import { validCpuMemoryCombinations } from './constants';
 
 export default class FargateService extends pulumi.ComponentResource {
@@ -249,7 +255,9 @@ export default class FargateService extends pulumi.ComponentResource {
                 requiresCompatibilities: ['FARGATE'],
                 cpu: cpu.toString(),
                 memory: memory.toString(),
-                containerDefinitions: pulumi.output(containers).apply((defs) => JSON.stringify(defs)),
+                containerDefinitions: this.generateAwsContainerDefinitions(containers).apply((defs) =>
+                    JSON.stringify(defs),
+                ),
             },
             { parent: this },
         );
@@ -354,7 +362,67 @@ export default class FargateService extends pulumi.ComponentResource {
         this.registerOutputs();
     }
 
-    // eslint-disable-next-line class-methods-use-this
+    private generateAwsContainerDefinitions(input: FargateContainerDefinition[]) {
+        return pulumi.output(input.map((def) => this.generateAwsContainerDefinition(def)));
+    }
+
+    /**
+     * Converts the type FargateContainerDefinition (defined by this code) into a aws.ecs.ContainerDefinition
+     */
+    private generateAwsContainerDefinition(input: FargateContainerDefinition) {
+        const secretsResult = input.secrets?.map(({ name, valueFromArn }) => ({ name, valueFrom: valueFromArn }));
+        const logConfigurationResult = input.logGroupName
+            ? {
+                  logDriver: 'awslogs',
+                  options: {
+                      'awslogs-region': aws.config.requireRegion().toString(),
+                      'awslogs-group': input.logGroupName,
+                      'awslogs-stream-prefix': input.name,
+                  },
+              }
+            : undefined;
+
+        return pulumi
+            .all([pulumi.output(input), secretsResult, logConfigurationResult])
+            .apply(([args, secrets, logConfiguration]) => ({
+                command: args.command,
+                cpu: args.cpu,
+                dependsOn: args.dependsOn,
+                disableNetworking: args.disableNetworking,
+                dnsSearchDomains: args.dnsSearchDomains,
+                dnsServers: args.dnsServers,
+                dockerLabels: args.dockerLabels,
+                entryPoint: args.entryPoint,
+                environment: args.environment,
+                essential: args.essential,
+                extraHosts: args.extraHosts,
+                firelensConfiguration: args.firelensConfiguration,
+                healthCheck: args.healthCheck,
+                image: args.image,
+                interactive: args.interactive,
+                linuxParameters: args.linuxParameters,
+                logConfiguration,
+                memory: args.memory,
+                memoryReservation: args.memoryReservation,
+                mountPoints: args.mountPoints,
+                name: args.name,
+                portMappings: args.portMappings,
+                privileged: args.privileged,
+                pseudoTerminal: args.pseudoTerminal,
+                readonlyRootFilesystem: args.readonlyRootFilesystem,
+                repositoryCredentials: args.repositoryCredentials,
+                resourceRequirements: args.resourceRequirements,
+                secrets,
+                startTimeout: args.startTimeout,
+                stopTimeout: args.stopTimeout,
+                systemControls: args.systemControls,
+                ulimits: args.ulimits,
+                user: args.user,
+                volumesFrom: args.volumesFrom,
+                workingDirectory: args.workingDirectory,
+            }));
+    }
+
     private validateArgs(input: FargateServiceArgs, defaults: FargateServiceDefaults): FargateServiceArgsWithDefaults {
         const errors: string[] = [];
         const args = { ...defaults, ...input };

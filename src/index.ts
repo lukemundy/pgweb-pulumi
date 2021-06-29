@@ -133,6 +133,10 @@ const authAction = {
     },
 };
 
+const pgwebLogGroup = new aws.cloudwatch.LogGroup(`${prefix}-logs`, {
+    retentionInDays: cfg.getNumber('logRetention') ?? 7,
+});
+
 const service = new FargateService('pgweb-service', {
     albConfig: {
         listenerArn: httpsListener.arn,
@@ -149,7 +153,7 @@ const service = new FargateService('pgweb-service', {
         {
             name: 'pgweb',
             image: cfg.get('container') ?? 'sosedoff/pgweb',
-            logGroupName: 'asd',
+            logGroupName: pgwebLogGroup.name,
             portMappings: [{ containerPort: 8081, protocol: 'tcp' }],
             repositoryCredentials: repoCredentials
                 ? {

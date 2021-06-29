@@ -35,7 +35,7 @@ interface EnvironmentVariable {
  * A custom type for container definitions. It removes some properties that aren't relevant for Fargate tasks and
  * enhances others for easier use in Pulumi code
  */
-interface FargateContainerDefinition
+export interface FargateContainerDefinition
     extends Omit<
         aws.ecs.ContainerDefinition,
         'secrets' | 'environment' | 'logConfiguration' | 'dockerSecurityOptions' | 'hostname' | 'links'
