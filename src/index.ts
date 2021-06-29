@@ -11,6 +11,7 @@ const vpcId = cfg.require('vpcId');
 const albSubnetIds = cfg.requireObject<string[]>('albSubnetIds');
 const pgwebSubnetIds = cfg.requireObject<string[]>('pgwebSubnetIds');
 const zoneId = cfg.require('hostedZoneId');
+const albLogBucket = cfg.require('albLogBucket');
 
 // OIDC settings
 const { clientId, clientSecret } = app;
@@ -70,6 +71,13 @@ const alb = new aws.lb.LoadBalancer(`${prefix}-alb`, {
     securityGroups: [albSecurityGroup.id],
     subnets: albSubnetIds,
     dropInvalidHeaderFields: true,
+    accessLogs: albLogBucket
+        ? {
+              enabled: true,
+              bucket: albLogBucket,
+              prefix: cfg.get('albLogBucketPrefix'),
+          }
+        : undefined,
 });
 
 const httpListener = new aws.lb.Listener(

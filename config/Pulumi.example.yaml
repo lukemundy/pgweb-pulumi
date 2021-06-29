@@ -50,3 +50,13 @@ config:
     - subnet-df1d929f83cb1b70a
     - subnet-6d847ed4858e44998
     - subnet-b06a653d8344acffe
+
+  #
+  # Logging
+  #
+
+  # OPTIONAL: The name of an S3 bucket where access logs from the ALB should be saved to
+  # pgweb-pulumi:albLogBucket: chumba-dev-logs-757b50b
+
+  # OPTIONAL: The prefix to save the abvoe logs to
+  # pgweb-pulumi:albLogBucketPrefix: elb-logs/chu-pgweb-dev
