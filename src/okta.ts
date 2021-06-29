@@ -18,7 +18,7 @@ const provider = new okta.Provider('okta-provider', {
 export const app = new okta.app.OAuth(
     'okta-app',
     {
-        label: prefix,
+        label: cfg.get('oktaAppName') ?? prefix,
         type: 'web',
         grantTypes: ['authorization_code', 'refresh_token'],
         redirectUris: [pulumi.interpolate`${url}/oauth2/idpresponse`],
@@ -75,7 +75,7 @@ const rule = new okta.auth.ServerPolicyRule(
 const userGroup = new okta.group.Group(
     'okta-users-group',
     {
-        name: prefix,
+        name: cfg.get('oktaGroupName') ?? prefix,
         description: `${prefix} access`,
     },
     {

@@ -28,6 +28,12 @@ config:
   # pgweb-pulumi:oktaApiToken:
   #   secure: AAABAAZAhCGqvzLYwWC7MD/v0EPWoFOFZNHaS/3hZUfN02Lz/IWge+lgTCnmoPWTdUxjyOpsET2xcF+qpXut40jpNscRSJmJiVM=
 
+  # OPTIONAL: Custom name for the application in Okta. If not defined it will default to "pgweb-<stackname>"
+  # pgweb-pulumi:oktaAppName: mypgweb
+
+  # OPTIONAL: Custom name for the group in Okta. If not defined it will default to "pgweb-<stackname>"
+  # pgweb-pulumi:oktaGroupName: mypgwebgroup
+
   #
   # Container Configuration
   #
