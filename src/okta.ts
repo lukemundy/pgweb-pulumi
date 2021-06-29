@@ -27,7 +27,12 @@ export const app = new okta.app.OAuth(
         responseTypes: ['code'],
         consentMethod: 'TRUSTED',
     },
-    { provider },
+    {
+        provider,
+        // Since we're using a GroupAssignment below, we ignore changes to groups on this resource to avoid issues where
+        // performing a `pulumi refresh` removes any group assignments on this resource
+        ignoreChanges: ['groups'],
+    },
 );
 
 export const server = new okta.auth.Server(
@@ -72,9 +77,13 @@ const userGroup = new okta.group.Group(
     {
         name: prefix,
         description: `${prefix} access`,
-        users: [],
     },
-    { provider },
+    {
+        provider,
+        // Members of this group will typically be managed by Okta Administrators rather than via Pulumi so we ensure we
+        // ignore any changes to the members of this group so we don't accidentally remove everybody
+        ignoreChanges: ['users'],
+    },
 );
 
 const groupAssignment = new okta.app.GroupAssignment(
