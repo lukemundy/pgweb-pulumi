@@ -178,6 +178,7 @@ const pgwebDns = new aws.route53.Record(`${prefix}-dns-record`, {
     ttl: 300,
 });
 
+export const serviceName = service.service.name;
 export const serviceSecurityGroupId = service.securityGroup.id;
 export const taskDefinitionArn = service.taskDefinition.arn;
 export const taskRoleArn = service.taskRole.arn;
@@ -185,3 +186,5 @@ export const taskRoleArn = service.taskRole.arn;
 export const albDnsName = alb.dnsName;
 export const albSecurityGroupId = albSecurityGroup.id;
 export const certificateArn = certificate.arn;
+
+export const url = pulumi.interpolate`https://${pgwebDns.fqdn}/`;
