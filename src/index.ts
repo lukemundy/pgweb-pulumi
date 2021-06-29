@@ -138,6 +138,10 @@ const service = new FargateService('pgweb-service', {
         securityGroupId: albSecurityGroup.id,
         ruleActions: authAction && [authAction],
         portMapping: { containerName: 'pgweb', containerPort: 8081 },
+        healthCheckConfig: {
+            enabled: true,
+            path: '/',
+        },
     },
     clusterName: cluster.name,
     containers: [
