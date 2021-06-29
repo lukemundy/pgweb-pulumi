@@ -145,14 +145,6 @@ export interface FargateServiceArgs {
     namespace?: string;
 
     /**
-     * ARN to a Secrets Manager secret containing the relevant repository credentials for the container(s) being
-     * deployed in this service. Use this when you need to pull images from a private, non-ECR Docker registry.
-     *
-     * https://docs.aws.amazon.com/AmazonECS/latest/developerguide/private-auth.html
-     */
-    repositoryCredentialsArn?: pulumi.Input<string>;
-
-    /**
      * An array of subnet IDs that the service should utilize. Must be subnets that are within the VPC provided in
      * `vpcId`. Ideally you should supply one subnet for each Availability Zone available in your region. The subnets
      * are assumed to be private subnets - the service will not be allocated a public IP and will need a route to a NAT

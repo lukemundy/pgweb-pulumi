@@ -25,7 +25,6 @@ export default class FargateService extends pulumi.ComponentResource {
             cpu,
             memory,
             namespace,
-            repositoryCredentialsArn,
             subnetIds,
             taskPolicy,
             vpcId,
@@ -150,8 +149,15 @@ export default class FargateService extends pulumi.ComponentResource {
             }
         }
 
-        // We'll also need a policy allowing access to the supplied repository credentials (if supplied)
-        if (repositoryCredentialsArn) {
+        // We'll also need a policy allowing access to any supplied repository credentials
+        const repositoryCredentialArns = containers.reduce((repoCreds, { repositoryCredentials }) => {
+            if (repositoryCredentials) {
+                repoCreds.push(repositoryCredentials.credentialsParameter);
+            }
+            return repoCreds;
+        }, [] as string[]);
+
+        if (repositoryCredentialArns.length > 0) {
             const repositorySecretsPolicy = new aws.iam.RolePolicy(
                 'container-repo-creds-policy',
                 {
@@ -163,7 +169,7 @@ export default class FargateService extends pulumi.ComponentResource {
                             {
                                 Effect: 'Allow',
                                 Action: 'secretsmanager:GetSecretValue',
-                                Resource: repositoryCredentialsArn,
+                                Resource: repositoryCredentialArns,
                             },
                         ],
                     },

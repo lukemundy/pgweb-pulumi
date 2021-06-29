@@ -12,6 +12,7 @@ const albSubnetIds = cfg.requireObject<string[]>('albSubnetIds');
 const pgwebSubnetIds = cfg.requireObject<string[]>('pgwebSubnetIds');
 const zoneId = cfg.require('hostedZoneId');
 const albLogBucket = cfg.require('albLogBucket');
+const repoCredentials = cfg.get('repositoryCredentials');
 
 // OIDC settings
 const { clientId, clientSecret } = app;
@@ -144,13 +145,17 @@ const service = new FargateService('pgweb-service', {
         },
     },
     clusterName: cluster.name,
-    repositoryCredentialsArn: cfg.get('repositoryCredentials'),
     containers: [
         {
             name: 'pgweb',
             image: cfg.get('container') ?? 'sosedoff/pgweb',
             logGroupName: 'asd',
             portMappings: [{ containerPort: 8081, protocol: 'tcp' }],
+            repositoryCredentials: repoCredentials
+                ? {
+                      credentialsParameter: repoCredentials,
+                  }
+                : undefined,
         },
     ],
     namespace: prefix,
